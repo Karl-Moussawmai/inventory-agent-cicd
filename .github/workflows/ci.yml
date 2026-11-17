@@ -2,8 +2,12 @@ name: Inventory Agent CI/CD
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/karl-moussawmai/inventory-agent-cicd:latest
 
 jobs:
   test:
@@ -11,22 +15,20 @@ jobs:
     permissions:
       contents: read
       packages: write
-    env:
-      IMAGE: ghcr.io/karl-moussawmai/inventory-agent-cicd:latest
 
     steps:
-      - name: Download project files
+      - name: Download repository files
         uses: actions/checkout@v6
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.14'
+          python-version: "3.14"
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Check Django project
+      - name: Run Django system check
         env:
           GEMINI_API_KEY: placeholder-for-django-check
         run: python manage.py check
@@ -41,3 +43,37 @@ jobs:
 
       - name: Publish Docker image
         run: docker push "$IMAGE"
+
+  deploy:
+    needs: test
+    runs-on: [self-hosted, Windows, X64]
+    permissions:
+      packages: read
+
+    steps:
+      - name: Deploy the inventory agent locally
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $envFile = 'C:\Users\17ada\Downloads\Lab Tutorial and Assignment 3\inventory\.env'
+          if (!(Test-Path -LiteralPath $envFile)) {
+            throw "Could not find the inventory project's .env file."
+          }
+
+          $env:GH_TOKEN | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          docker pull $env:IMAGE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $containers = docker ps -a --format '{{.Names}}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          if ($containers -contains 'inventory-agent-cicd') {
+            docker rm -f inventory-agent-cicd
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+          docker run -d --name inventory-agent-cicd --env-file "$envFile" -p 127.0.0.1:8001:8000 $env:IMAGE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
