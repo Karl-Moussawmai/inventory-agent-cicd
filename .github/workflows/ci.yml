@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Deploy the inventory agent locally
-        shell: powershell
+        shell: 'powershell -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "{0}"'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
